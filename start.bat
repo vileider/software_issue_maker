@@ -1,9 +1,9 @@
 @echo off
-title Launch Mouse Button Switcher
-echo Starting Mouse Button Switcher...
+title Launch softwarer
+echo Starting software issues...
 
 :: Set path to code directory
-set "scriptPath=%~dp0code\MouseSwitcher.ps1"
+set "scriptPath=%~dp0Main.ps1"
 
 :: Check if script exists
 if not exist "%scriptPath%" (
