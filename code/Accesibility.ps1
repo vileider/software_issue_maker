@@ -1,71 +1,38 @@
+# Define the component
 $MousePointerSize = @{
     Name = "Mouse Pointer Size"
-    Width = 360 
+    Width = 360
     Height = 80
     Actions = @{
         Enable = {
-            $CSharpSig = @"
-            using System;
-            using System.Runtime.InteropServices;
-            public class WinAPI 
-            {
-                [DllImport("user32.dll", EntryPoint = "SystemParametersInfo", SetLastError=true)]
-                public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, uint pvParam, uint fWinIni);
-                
-                [DllImport("user32.dll", SetLastError=true)]
-                public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, IntPtr lpdwResult);
-            }
-"@
-            $SizeChanger = Add-Type -TypeDefinition $CSharpSig -PassThru
-            
             try {
-                $result = $SizeChanger::SystemParametersInfo(0x0029, [UInt32]3, $null, 1)
-                if (!$result) {
-                    $errCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-                    Write-Host "SystemParametersInfo failed with error code: $errCode"
-                }
+                # Set registry key for large pointer size (e.g., 15)
+                Set-ItemProperty -Path "HKCU:\Control Panel\Cursors" -Name "CursorBaseSize" -Value 45
+                Write-Host "Cursor size set to Large. Updating settings..."
                 
-                $SizeChanger::SystemParametersInfo(0x0057, 0, $null, 0)
-                $SizeChanger::SendMessageTimeout([IntPtr]0xffff, 0x001A, [IntPtr]41, [IntPtr]0, 2, 5000, [IntPtr]0)
+                # Apply changes
+                rundll32.exe user32.dll, UpdatePerUserSystemParameters
+                Write-Host "Mouse pointer size set to Large."
+                return $true
             } catch {
-                Write-Host "Error: $_"
-                $result = $false
+                Write-Host "Error setting mouse pointer size: $_" -ForegroundColor Red
+                return $false
             }
-            
-            Write-Host "Mouse pointer size set to Extra Large. Result: $result"
-            return $result
         }
         Disable = {
-            $CSharpSig = @"
-            using System;
-            using System.Runtime.InteropServices;
-            public class WinAPI 
-            {
-                [DllImport("user32.dll", EntryPoint = "SystemParametersInfo", SetLastError=true)]
-                public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, uint pvParam, uint fWinIni);
-                
-                [DllImport("user32.dll", SetLastError=true)]
-                public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, IntPtr lpdwResult);
-            }
-"@
-            $SizeChanger = Add-Type -TypeDefinition $CSharpSig -PassThru
-            
             try {
-                $result = $SizeChanger::SystemParametersInfo(0x0029, [UInt32]1, $null, 1)
-                if (!$result) {
-                    $errCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-                    Write-Host "SystemParametersInfo failed with error code: $errCode"
-                }
+                # Reset registry key for default pointer size (e.g., 10)
+                Set-ItemProperty -Path "HKCU:\Control Panel\Cursors" -Name "CursorBaseSize" -Value 10
+                Write-Host "Cursor size set to Normal. Updating settings..."
                 
-                $SizeChanger::SystemParametersInfo(0x0057, 0, $null, 0)
-                $SizeChanger::SendMessageTimeout([IntPtr]0xffff, 0x001A, [IntPtr]41, [IntPtr]0, 2, 5000, [IntPtr]0)
+                # Apply changes
+                rundll32.exe user32.dll, UpdatePerUserSystemParameters
+                Write-Host "Mouse pointer size reset to Normal."
+                return $true
             } catch {
-                Write-Host "Error: $_"
-                $result = $false  
+                Write-Host "Error resetting mouse pointer size: $_" -ForegroundColor Red
+                return $false
             }
-
-            Write-Host "Mouse pointer size set to Normal. Result: $result"
-            return $result
         }
     }
 }
