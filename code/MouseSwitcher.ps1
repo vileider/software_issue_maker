@@ -13,8 +13,14 @@ public class MouseSwitch {
 }
 '@
             try {
+                # Change current state
                 [MouseSwitch]::SwapMouseButton(1)
-                Write-Host "Mouse buttons swapped successfully"
+                
+                # Update registry for persistence
+                $regPath = "HKCU:\Control Panel\Mouse"
+                Set-ItemProperty -Path $regPath -Name "SwapMouseButtons" -Value "1"
+                
+                Write-Host "Mouse buttons swapped successfully and set to persist"
                 return $true
             } catch {
                 Write-Host "Error swapping mouse buttons: $_"
@@ -30,8 +36,14 @@ public class MouseSwitch {
 }
 '@
             try {
+                # Change current state
                 [MouseSwitch]::SwapMouseButton(0)
-                Write-Host "Mouse buttons restored successfully"
+                
+                # Update registry for persistence
+                $regPath = "HKCU:\Control Panel\Mouse"
+                Set-ItemProperty -Path $regPath -Name "SwapMouseButtons" -Value "0"
+                
+                Write-Host "Mouse buttons restored successfully and set to persist"
                 return $true
             } catch {
                 Write-Host "Error restoring mouse buttons: $_"
