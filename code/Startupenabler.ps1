@@ -6,99 +6,94 @@ $StartupEnabler = @{
         Enable = {
             try {
                 # Store original states
-                $script:originalStates = @()
+                $script:originalStates = @{}
                 
-                # Enable startups in Registry Run (User level only)
-                $regPaths = @(
-                    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
-                    "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
-                )
-
-                foreach ($path in $regPaths) {
-                    if (Test-Path $path) {
-                        Get-Item $path | Select-Object -ExpandProperty Property | ForEach-Object {
-                            Write-Host "Enabling user registry startup: $_"
-                        }
-                    }
-                }
-
-                # Enable Task Scheduler startups (only user tasks)
-                Write-Host "Enabling user scheduled task startups..."
-                Get-ScheduledTask | Where-Object {
-                    $_.State -eq "Disabled" -and 
-                    $_.Principal.UserId -eq [System.Security.Principal.WindowsIdentity]::GetCurrent().Name -and
-                    -not $_.TaskPath.StartsWith("\Microsoft\") -and
-                    -not $_.TaskPath.StartsWith("\Windows")
-                } | ForEach-Object {
-                    Write-Host "Processing task: $($_.TaskName)"
+                # Registry paths for startup states
+                $startupApprovedPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder"
+                $startupRunPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
+                
+                # Function to enable startup item
+                function Enable-StartupItem {
+                    param($keyPath, $itemName)
                     try {
-                        $script:originalStates += @{
-                            Name = $_.TaskName
-                            Path = $_.TaskPath
-                            State = $_.State
+                        if (Test-Path $keyPath) {
+                            $value = (Get-ItemProperty -Path $keyPath -Name $itemName -ErrorAction SilentlyContinue).$itemName
+                            if ($value) {
+                                # Store original state
+                                $script:originalStates[$itemName] = $value
+                                
+                                # Create new byte array for "Enabled" state
+                                $newValue = [byte[]]@(2,0,0,0,0,0,0,0,0,0,0,0)
+                                
+                                # Set new value
+                                Set-ItemProperty -Path $keyPath -Name $itemName -Value $newValue
+                                Write-Host "Enabled startup item: $itemName"
+                            }
                         }
-                        Enable-ScheduledTask -TaskName $_.TaskName -TaskPath $_.TaskPath -ErrorAction Stop
-                        Write-Host "Enabled task: $($_.TaskName)"
-                    }
-                    catch {
-                        Write-Host "Skipping task due to permissions: $($_.TaskName)"
-                    }
-                }
-
-                # Enable MSConfig user startups
-                $regPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
-                if (Test-Path $regPath) {
-                    $items = Get-Item -Path $regPath
-                    $items.Property | ForEach-Object {
-                        try {
-                            $data = (Get-ItemProperty -Path $regPath -Name $_).$_
-                            $data[0] = 2  # Enable startup
-                            Set-ItemProperty -Path $regPath -Name $_ -Value $data
-                            Write-Host "Enabled user MSConfig startup: $_"
-                        }
-                        catch {
-                            Write-Host "Skipping MSConfig item due to permissions: $_"
-                        }
+                    } catch {
+                        Write-Host "Error processing $itemName : $_"
                     }
                 }
-
-                # Find user startup folder items
+                
+                # Get all .lnk files from Startup folder
                 $startupFolder = [Environment]::GetFolderPath('Startup')
-                if (Test-Path $startupFolder) {
-                    Get-ChildItem -Path $startupFolder | ForEach-Object {
-                        Write-Host "Found startup item: $($_.Name)"
+                $startupFiles = Get-ChildItem -Path $startupFolder -Filter "*.lnk"
+                
+                foreach ($file in $startupFiles) {
+                    Write-Host "Processing startup link: $($file.Name)"
+                    Enable-StartupItem $startupApprovedPath $file.Name
+                }
+
+                # Handle Run registry items
+                $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+                if (Test-Path $runKey) {
+                    Get-Item $runKey | Select-Object -ExpandProperty Property | ForEach-Object {
+                        Write-Host "Processing Run item: $_"
+                        Enable-StartupItem $startupRunPath $_
+                    }
+                }
+                
+                # Additional registry method to force enable
+                $disableKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32"
+                if (Test-Path $disableKey) {
+                    $props = Get-ItemProperty $disableKey
+                    $props.PSObject.Properties | Where-Object { $_.Name -notlike "PS*" } | ForEach-Object {
+                        try {
+                            $newValue = [byte[]]@(2,0,0,0,0,0,0,0,0,0,0,0)
+                            Set-ItemProperty -Path $disableKey -Name $_.Name -Value $newValue
+                            Write-Host "Enabled startup item (alternate method): $($_.Name)"
+                        } catch {
+                            Write-Host "Error enabling $($_.Name): $_"
+                        }
                     }
                 }
 
-                Write-Host "User startup items have been enabled"
+                Write-Host "All startup items processed"
                 return $true
-            }
-            catch {
+
+            } catch {
                 Write-Host "Error enabling startups: $_"
                 return $false
             }
         }
         Disable = {
             try {
-                # Restore original scheduled task states
-                if ($script:originalStates) {
-                    foreach ($task in $script:originalStates) {
-                        if ($task.State -eq "Disabled") {
-                            try {
-                                Disable-ScheduledTask -TaskName $task.Name -TaskPath $task.Path -ErrorAction Stop
-                                Write-Host "Restored task state: $($task.Name)"
-                            }
-                            catch {
-                                Write-Host "Could not restore task: $($task.Name)"
-                            }
-                        }
+                # Restore original states
+                foreach ($item in $script:originalStates.GetEnumerator()) {
+                    $keyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder"
+                    if (!(Test-Path $keyPath)) { continue }
+                    
+                    try {
+                        Set-ItemProperty -Path $keyPath -Name $item.Key -Value $item.Value
+                        Write-Host "Restored original state for: $($item.Key)"
+                    } catch {
+                        Write-Host "Error restoring $($item.Key): $_"
                     }
                 }
 
-                Write-Host "Restored original user startup states where possible"
+                Write-Host "Restored original startup states where possible"
                 return $true
-            }
-            catch {
+            } catch {
                 Write-Host "Error restoring startup states: $_"
                 return $false
             }
